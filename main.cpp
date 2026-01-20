@@ -33,7 +33,7 @@ Vector3 Normalize(const Vector3& v) {
 	if (len != 0.0f) {
 		return { v.x / len, v.y / len, v.z / len };
 	}
-	return { 0.0f, 0.0f, 0.0f }; // ゼロベクトルは正規化できない
+	return { 0.0f, 0.0f, 0.0f };
 }
 
 /// @brief 内積
@@ -54,20 +54,12 @@ Vector3 Cross(const Vector3& v1, const Vector3& v2) {
 Vector3 operator*(const Vector3& v, float s) {
 	return { v.x * s, v.y * s, v.z * s };
 }
-
-/// @brief ベクトルとスカラーの積
 Vector3 operator*(float s, const Vector3& v) {
 	return v * s;
 }
-
-/// @brief ベクトルの足し算
-Vector3 operator+(const Vector3& v1, const Vector3& v2) {
-	return { v1.x + v2.x, v1.y + v2.y, v1.z + v2.z };
-}
-
-/// @brief ベクトルの引き算
-Vector3 operator-(const Vector3& v1, const Vector3& v2) {
-	return { v1.x - v2.x, v1.y - v2.y, v1.z - v2.z };
+/// @brief 単項マイナス演算子
+Vector3 operator-(const Vector3& v) {
+	return { -v.x, -v.y, -v.z };
 }
 
 /// @brief 単位行列を作成
@@ -80,100 +72,95 @@ Matrix4x4 Identity() {
 	return result;
 }
 
-/// @brief 4x4行列の乗算
-Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
-	Matrix4x4 result{};
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			result.m[i][j] = 0.0f;
-			for (int k = 0; k < 4; ++k) {
-				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
-			}
-		}
-	}
-	return result;
-}
-
-/// @brief 任意軸回転行列を作成 (ロドリゲスの回転公式)
-Matrix4x4 MakeRotateAxisAngle(const Vector3& axis, float angle) {
-	Matrix4x4 result = Identity();
-	float c = std::cos(angle);
-	float s = std::sin(angle);
-	float t = 1.0f - c;
-
-	result.m[0][0] = t * axis.x * axis.x + c;
-	result.m[0][1] = t * axis.x * axis.y + s * axis.z;
-	result.m[0][2] = t * axis.x * axis.z - s * axis.y;
-	result.m[1][0] = t * axis.x * axis.y - s * axis.z;
-	result.m[1][1] = t * axis.y * axis.y + c;
-	result.m[1][2] = t * axis.y * axis.z + s * axis.x;
-	result.m[2][0] = t * axis.x * axis.z + s * axis.y;
-	result.m[2][1] = t * axis.y * axis.z - s * axis.x;
-	result.m[2][2] = t * axis.z * axis.z + c;
-
-	return result;
-}
-
-// 課題の関数
+// 課題の関数：先生の指示通り修正
+// 1. acosを使わず、Dotをcos、Crossのノルムをsinとして使用
+// 2. MakeRotateAxisAngleを呼ばず、直接式に当てはめる
 
 /// @brief ある方向からある方向へ向ける回転行列を作成
-/// @param from 回転前の方向ベクトル (正規化されていることが望ましい)
-/// @param to 回転後の方向ベクトル (正規化されていることが望ましい)
-/// @return 回転行列 (Matrix4x4)
 Matrix4x4 DirectionToDirection(const Vector3& from, const Vector3& to) {
-	// fromとtoが正規化されていることを前提とする
+	Vector3 n; // 回転軸
+	float cosTheta; // cos
+	float sinTheta; // sin
 
-	// 1. 回転軸 (Axis of Rotation) を求める
-	// fromとtoの外積が回転軸となる
-	Vector3 axis = Cross(from, to);
-	
-	// 2. 回転角度 (Angle of Rotation) を求める
-	// fromとtoの内積から角度を求める
-	float dot = Dot(from, to);
+	// 1. cosTheta を求める (内積)
+	cosTheta = Dot(from, to);
 
-	// cos(angle) = dot(from, to) / (|from|*|to|)。fromとtoは正規化されているため、|from|=|to|=1
-	// 浮動小数点誤差により、dotが1.0や-1.0をわずかに超える場合があるため、クランプする
-	float safeDot = std::max(-1.0f, std::min(1.0f, dot));
-	float angle = std::acos(safeDot);
+	// 2. 回転軸と sinTheta を求める (外積)
+	Vector3 cross = Cross(from, to);
+	sinTheta = Length(cross);
 
-	// 3. 回転行列を作成
+	// 通常は外積の結果が回転軸になるが、正規化が必要
+	// 回転軸 n を計算 (sinThetaが0に近い場合は計算できないため後述の分岐へ)
+	if (sinTheta >= 1.0e-6f) {
+		n = { cross.x / sinTheta, cross.y / sinTheta, cross.z / sinTheta };
+	} else {
+		// sinThetaが0に近い = 平行または逆平行
+		n = { 0.0f, 0.0f, 0.0f }; // 仮
+	}
 
-	// a. fromとtoが同じ方向の場合 (angle = 0)
-	if (std::abs(angle) < 1.0e-6f) {
+	// 3. 場合分けして行列を作成
+
+	// a. 同じ方向 (cosTheta が 1 に近い)
+	if (cosTheta >= 1.0f - 1.0e-6f) {
 		return Identity();
 	}
 
-	// b. fromとtoが反対方向の場合 (angle = PI)
-	if (std::abs(angle - kPI) < 1.0e-6f) {
-		// 回転軸が一意に定まらないため、任意の垂直な軸を選ぶ
-		// 例: from = {0, 1, 0} の場合、axis = {1, 0, 0} を選ぶ
-		// from = {1, 0, 0} の場合、axis = {0, 1, 0} を選ぶ
-		// fromと垂直な適当な軸を探す
-		Vector3 tempAxis = { 0.0f, 1.0f, 0.0f }; // 仮の軸
+	// b. 反対方向 (cosTheta が -1 に近い)
+	// この場合、外積(sin)が0になり軸が定まらないため、垂直な任意の軸を探す
+	if (cosTheta <= -1.0f + 1.0e-6f) {
+		Vector3 tempAxis = { 0.0f, 1.0f, 0.0f };
 		if (std::abs(from.y) > std::abs(from.x) && std::abs(from.y) > std::abs(from.z)) {
-			// y成分が最も大きい場合、x軸を仮の軸とする
+			// y成分が大きいならx軸を仮にするなどして垂直軸を作る
 			tempAxis = { 1.0f, 0.0f, 0.0f };
 		}
-		axis = Cross(from, tempAxis);
-		axis = Normalize(axis); // 垂直な軸を正規化
-		return MakeRotateAxisAngle(axis, kPI);
+		n = Cross(from, tempAxis);
+		n = Normalize(n);
+
+		// 180度回転なので、cos=-1, sin=0 として計算
+		cosTheta = -1.0f;
+		sinTheta = 0.0f;
 	}
 
-	// c. 通常の回転
-	// 回転軸を正規化
-	axis = Normalize(axis);
+	// c. 行列の計算 (ロドリゲスの回転公式の変形)
+	// R = I + sin(n)x + (1-cos)(n)x^2
+	// 成分展開して計算する
 
-	// 任意軸回転行列を生成
-	return MakeRotateAxisAngle(axis, angle);
+	float t = 1.0f - cosTheta;
+	float nx = n.x;
+	float ny = n.y;
+	float nz = n.z;
+
+	Matrix4x4 result{};
+
+	result.m[0][0] = t * nx * nx + cosTheta;
+	result.m[0][1] = t * nx * ny + sinTheta * nz;
+	result.m[0][2] = t * nx * nz - sinTheta * ny;
+	result.m[0][3] = 0.0f;
+
+	result.m[1][0] = t * nx * ny - sinTheta * nz;
+	result.m[1][1] = t * ny * ny + cosTheta;
+	result.m[1][2] = t * ny * nz + sinTheta * nx;
+	result.m[1][3] = 0.0f;
+
+	result.m[2][0] = t * nx * nz + sinTheta * ny;
+	result.m[2][1] = t * ny * nz - sinTheta * nx;
+	result.m[2][2] = t * nz * nz + cosTheta;
+	result.m[2][3] = 0.0f;
+
+	result.m[3][0] = 0.0f;
+	result.m[3][1] = 0.0f;
+	result.m[3][2] = 0.0f;
+	result.m[3][3] = 1.0f;
+
+	return result;
 }
 
-// 確認用出力関数 (Novice::ScreenPrintfを模倣)
+// 確認用出力関数
 void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label) {
 	Novice::ScreenPrintf(x, y, "%s", label);
 	for (int i = 0; i < 4; ++i) {
 		for (int j = 0; j < 4; ++j) {
-			// 小数点以下3桁で表示 (完成イメージに合わせるため)
-			Novice::ScreenPrintf(x + j * 90, y + (i + 1) * 20, "%7.3f", matrix.m[i][j]);
+			Novice::ScreenPrintf(x + j * 60, y + (i + 1) * 20, "%6.3f", matrix.m[i][j]);
 		}
 	}
 }
@@ -201,23 +188,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓更新処理ここから
 		///
 
-		// 完成イメージのコードを再現
 		const int kRowHeight = 100;
 
+		// 先生のスライドに合わせたベクトル設定
 		Vector3 from0 = Normalize({ 1.0f, 0.7f, 0.5f });
-		Vector3 to0 = from0 * (-1.0f); // -from0
+		Vector3 to0 = -from0;
 		Vector3 from1 = Normalize({ -0.6f, 0.9f, 0.2f });
 		Vector3 to1 = Normalize({ 0.4f, 0.7f, -0.5f });
 
-		// rotateMatrix0: from0からto0 (-from0) への回転
-		Matrix4x4 rotateMatrix0 = DirectionToDirection(from0, to0);
+		// rotateMatrix0: (1,0,0) から (-1,0,0) への回転
+		// ※ここを修正しないとスライドの結果と一致しません
+		Matrix4x4 rotateMatrix0 = DirectionToDirection(
+			Normalize({ 1.0f, 0.0f, 0.0f }),
+			Normalize({ -1.0f, 0.0f, 0.0f })
+		);
 
-		// rotateMatrix1: from1から {0.0f, 0.0f, 1.0f} への回転
-		Vector3 targetVector1 = Normalize({ -1.0f, 0.0f, 0.0f }); // Completion image uses {-1.0f, 0.0f, 0.0f}
+		// rotateMatrix1: from0 から to0 への回転
+		Matrix4x4 rotateMatrix1 = DirectionToDirection(from0, to0);
 
-		Matrix4x4 rotateMatrix1 = DirectionToDirection(from1, targetVector1);
-
-		// rotateMatrix2: from1からto1への回転
+		// rotateMatrix2: from1 から to1 への回転
 		Matrix4x4 rotateMatrix2 = DirectionToDirection(from1, to1);
 
 		///
