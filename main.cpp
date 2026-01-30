@@ -108,9 +108,10 @@ Matrix4x4 DirectionToDirection(const Vector3& from, const Vector3& to) {
 	// b. 反対方向 (cosTheta が -1 に近い)
 	// この場合、外積(sin)が0になり軸が定まらないため、垂直な任意の軸を探す
 	if (cosTheta <= -1.0f + 1.0e-6f) {
-		Vector3 tempAxis = { 0.0f, 1.0f, 0.0f };
-		if (std::abs(from.y) > std::abs(from.x) && std::abs(from.y) > std::abs(from.z)) {
-			// y成分が大きいならx軸を仮にするなどして垂直軸を作る
+		Vector3 tempAxis = { 0.0f, 0.0f, 1.0f };
+
+		// もし入力ベクトルがZ軸に近い場合だけ、X軸を使うように変更
+		if (std::abs(from.z) > std::abs(from.x) && std::abs(from.z) > std::abs(from.y)) {
 			tempAxis = { 1.0f, 0.0f, 0.0f };
 		}
 		n = Cross(from, tempAxis);
